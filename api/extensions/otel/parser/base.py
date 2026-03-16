@@ -14,10 +14,7 @@ from opentelemetry.trace import Span
 from opentelemetry.trace.status import Status, StatusCode
 from pydantic import BaseModel
 
-<<<<<<< HEAD
 from configs import dify_config
-=======
->>>>>>> fix/auto-activate-credential-on-create
 from dify_graph.enums import BuiltinNodeTypes
 from dify_graph.file.models import File
 from dify_graph.graph_events import GraphNodeEventBase
