@@ -10,7 +10,7 @@ Accessed via ``ext_enterprise_telemetry.get_enterprise_exporter()`` from any thr
 import logging
 import socket
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from opentelemetry import trace
@@ -62,9 +62,9 @@ def _datetime_to_ns(dt: datetime) -> int:
     """Convert a datetime to nanoseconds since epoch (OTEL convention)."""
     # Ensure we always interpret naive datetimes as UTC instead of local time.
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     else:
-        dt = dt.astimezone(timezone.utc)
+        dt = dt.astimezone(UTC)
     return int(dt.timestamp() * 1_000_000_000)
 
 
