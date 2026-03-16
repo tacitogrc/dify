@@ -107,6 +107,7 @@ def make_message_data(**overrides):
         "agent_thoughts": [],
         "query": "sample-query",
         "inputs": "sample-input",
+        "app_id": "app-id",
     }
     base.update(overrides)
 
@@ -171,10 +172,10 @@ def configure_db_query(session, *, message_file=None, workflow_app_log=None):
 
 class DummySessionContext:
     scalar_values = []
+    _shared_index = 0
 
     def __init__(self, engine):
-        self._values = list(self.scalar_values)
-        self._index = 0
+        self._values = self.scalar_values
 
     def __enter__(self):
         return self
@@ -183,11 +184,27 @@ class DummySessionContext:
         return False
 
     def scalar(self, *args, **kwargs):
-        if self._index >= len(self._values):
+        if DummySessionContext._shared_index >= len(self._values):
             return None
-        value = self._values[self._index]
-        self._index += 1
+        value = self._values[DummySessionContext._shared_index]
+        DummySessionContext._shared_index += 1
         return value
+
+    def scalars(self, *args, **kwargs):
+        class ScalarsResult:
+            def __init__(self, context):
+                self._context = context
+
+            def all(self):
+                if DummySessionContext._shared_index >= len(self._context._values):
+                    return []
+                value = self._context._values[DummySessionContext._shared_index]
+                DummySessionContext._shared_index += 1
+                if isinstance(value, list):
+                    return value
+                return [value] if value is not None else []
+
+        return ScalarsResult(self)
 
 
 @pytest.fixture(autouse=True)
@@ -216,6 +233,8 @@ def patch_timer_and_current_app(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def patch_sqlalchemy_session(monkeypatch):
+    DummySessionContext.scalar_values = []
+    DummySessionContext._shared_index = 0
     monkeypatch.setattr("core.ops.ops_trace_manager.Session", DummySessionContext)
 
 
@@ -453,7 +472,7 @@ def test_trace_task_message_trace(trace_task_message, mock_db):
 
 
 def test_trace_task_workflow_trace(workflow_repo_fixture, mock_db):
-    DummySessionContext.scalar_values = ["wf-app-log", "message-ref"]
+    DummySessionContext.scalar_values = [[], "wf-app-log", "message-ref"]
     execution = SimpleNamespace(id_="run-id")
     task = TraceTask(
         trace_type=TraceTaskName.WORKFLOW_TRACE, workflow_execution=execution, conversation_id="conv", user_id="user"
