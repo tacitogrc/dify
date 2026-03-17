@@ -1,9 +1,18 @@
 import { headers } from 'next/headers'
+import { IS_PROD } from '@/config'
 import { env } from '@/env'
 import { MODERN_MONACO_IMPORT_MAP } from './hoisted-config'
 
 function withBasePath(pathname: string) {
   return `${env.NEXT_PUBLIC_BASE_PATH}${pathname}`
+}
+
+function extractNonceFromCSP(cspHeader: string | null): string | undefined {
+  if (!cspHeader)
+    return undefined
+
+  const nonceMatch = /'nonce-([^']+)'/.exec(cspHeader)
+  return nonceMatch ? nonceMatch[1] : undefined
 }
 
 function getRequestOrigin(requestHeaders: Headers) {
@@ -14,9 +23,18 @@ function getRequestOrigin(requestHeaders: Headers) {
   return `${protocol}://${host}`
 }
 
+function getScriptNonce(requestHeaders: Headers) {
+  if (!IS_PROD)
+    return undefined
+
+  return extractNonceFromCSP(requestHeaders.get('content-security-policy'))
+    ?? requestHeaders.get('x-nonce')
+    ?? undefined
+}
+
 const MonacoImportMap = async () => {
   const requestHeaders = await headers()
-  const nonce = process.env.NODE_ENV === 'production' ? requestHeaders.get('x-nonce') ?? '' : ''
+  const nonce = getScriptNonce(requestHeaders)
   const requestOrigin = getRequestOrigin(requestHeaders)
   const importMap = JSON.stringify({
     imports: Object.fromEntries(
