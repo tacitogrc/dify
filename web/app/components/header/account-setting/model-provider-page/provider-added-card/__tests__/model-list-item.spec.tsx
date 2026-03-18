@@ -5,6 +5,13 @@ import { disableModel, enableModel } from '@/service/common'
 import { ModelStatusEnum } from '../../declarations'
 import ModelListItem from '../model-list-item'
 
+function createWrapper() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  )
+}
+
 let mockModelLoadBalancingEnabled = false
 let mockPlanType: string = 'pro'
 
@@ -72,6 +79,7 @@ describe('ModelListItem', () => {
         provider={mockProvider}
         isConfigurable={false}
       />,
+      { wrapper: createWrapper() },
     )
     expect(screen.getByTestId('model-icon')).toBeInTheDocument()
     expect(screen.getByTestId('model-name')).toBeInTheDocument()
@@ -86,6 +94,7 @@ describe('ModelListItem', () => {
         isConfigurable={false}
         onChange={onChange}
       />,
+      { wrapper: createWrapper() },
     )
     fireEvent.click(screen.getByRole('switch'))
 
@@ -105,6 +114,7 @@ describe('ModelListItem', () => {
         isConfigurable={false}
         onChange={onChange}
       />,
+      { wrapper: createWrapper() },
     )
     fireEvent.click(screen.getByRole('switch'))
 
@@ -125,6 +135,7 @@ describe('ModelListItem', () => {
         isConfigurable={false}
         onModifyLoadBalancing={onModifyLoadBalancing}
       />,
+      { wrapper: createWrapper() },
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'modify load balancing' }))
@@ -144,6 +155,7 @@ describe('ModelListItem', () => {
         provider={mockProvider}
         isConfigurable={false}
       />,
+      { wrapper: createWrapper() },
     )
 
     // Assert
@@ -169,6 +181,7 @@ describe('ModelListItem', () => {
         provider={mockProvider}
         isConfigurable={false}
       />,
+      { wrapper: createWrapper() },
     )
 
     // Assert - Badge component should render
@@ -189,6 +202,7 @@ describe('ModelListItem', () => {
         provider={mockProvider}
         isConfigurable={false}
       />,
+      { wrapper: createWrapper() },
     )
 
     // Assert - ConfigModel should show because plan.type === 'sandbox'
@@ -208,6 +222,7 @@ describe('ModelListItem', () => {
         provider={mockProvider}
         isConfigurable={false}
       />,
+      { wrapper: createWrapper() },
     )
 
     // Assert - ConfigModel should NOT show because plan.type !== 'sandbox' and load balancing is disabled
@@ -227,6 +242,7 @@ describe('ModelListItem', () => {
         provider={mockProvider}
         isConfigurable={false}
       />,
+      { wrapper: createWrapper() },
     )
 
     // Assert - ConfigModel should not render because status is not active/disabled
@@ -248,6 +264,7 @@ describe('ModelListItem', () => {
         provider={mockProvider}
         isConfigurable={true}
       />,
+      { wrapper: createWrapper() },
     )
 
     // Assert

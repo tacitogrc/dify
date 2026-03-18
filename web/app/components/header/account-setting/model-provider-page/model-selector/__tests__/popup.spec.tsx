@@ -44,6 +44,10 @@ vi.mock('../../hooks', async () => {
   return {
     ...actual,
     useLanguage: () => mockLanguage,
+    useMarketplaceAllPlugins: () => ({
+      plugins: mockMarketplacePlugins.current,
+      isLoading: mockMarketplacePlugins.isLoading,
+    }),
   }
 })
 
@@ -161,17 +165,25 @@ const makeContextProvider = (overrides: Partial<MockContextProvider> = {}): Mock
 })
 
 describe('Popup', () => {
-  let closeActiveTooltipSpy: ReturnType<typeof vi.spyOn>
-
   beforeEach(() => {
     vi.clearAllMocks()
     mockLanguage = 'en_US'
     mockSupportFunctionCall.mockReturnValue(true)
-    closeActiveTooltipSpy = vi.spyOn(tooltipManager, 'closeActiveTooltip')
+    mockMarketplacePlugins.current = []
+    mockMarketplacePlugins.isLoading = false
+    mockContextModelProviders.current = []
+    mockTrialModels.current = ['test-openai', 'test-anthropic']
+    Object.assign(mockTrialCredits, {
+      credits: 200,
+      totalCredits: 200,
+      isExhausted: false,
+      isLoading: false,
+      nextCreditResetDate: undefined,
+    })
   })
 
   it('should filter models by search and allow clearing search', () => {
-    render(
+    const { container } = render(
       <Popup
         modelList={[makeModel()]}
         onSelect={vi.fn()}
@@ -183,11 +195,39 @@ describe('Popup', () => {
 
     const input = screen.getByPlaceholderText('datasetSettings.form.searchModel')
     fireEvent.change(input, { target: { value: 'not-found' } })
-    expect(screen.getByText('No model found for “not-found”')).toBeInTheDocument()
+    expect(screen.getByText('No model found for \u201Cnot-found\u201D')).toBeInTheDocument()
 
-    fireEvent.change(input, { target: { value: '' } })
+    const clearIcon = container.querySelector('.i-custom-vender-solid-general-x-circle')
+    expect(clearIcon).toBeInTheDocument()
+    fireEvent.click(clearIcon!)
     expect((input as HTMLInputElement).value).toBe('')
-    expect(screen.getByText('openai')).toBeInTheDocument()
+  })
+
+  it('should not show compatible-only helper text when no scope features are applied', () => {
+    render(
+      <Popup
+        modelList={[makeModel()]}
+        onSelect={vi.fn()}
+        onHide={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByText('common.modelProvider.selector.onlyCompatibleModelsShown')).not.toBeInTheDocument()
+  })
+
+  it('should show compatible-only helper banner when scope features are applied', () => {
+    const { container } = render(
+      <Popup
+        modelList={[makeModel()]}
+        onSelect={vi.fn()}
+        onHide={vi.fn()}
+        scopeFeatures={[ModelFeatureEnum.vision]}
+      />,
+    )
+
+    expect(screen.getByTestId('compatible-models-banner')).toBeInTheDocument()
+    expect(screen.getByText('common.modelProvider.selector.onlyCompatibleModelsShown')).toBeInTheDocument()
+    expect(container.querySelector('.i-ri-information-2-fill')).toBeInTheDocument()
   })
 
   it('should filter by scope features including toolCall and non-toolCall checks', () => {
@@ -195,7 +235,6 @@ describe('Popup', () => {
       makeModel({ models: [makeModelItem({ features: [ModelFeatureEnum.toolCall, ModelFeatureEnum.vision] })] }),
     ]
 
-    // When tool-call support is missing, it should be filtered out.
     mockSupportFunctionCall.mockReturnValue(false)
     const { unmount } = render(
       <Popup
@@ -205,9 +244,8 @@ describe('Popup', () => {
         scopeFeatures={[ModelFeatureEnum.toolCall, ModelFeatureEnum.vision]}
       />,
     )
-    expect(screen.getByText('No model found for “”')).toBeInTheDocument()
+    expect(screen.getByText('No model found for \u201C\u201D')).toBeInTheDocument()
 
-    // When tool-call support exists, the non-toolCall feature check should also pass.
     unmount()
     mockSupportFunctionCall.mockReturnValue(true)
     const { unmount: unmount2 } = render(
@@ -231,7 +269,6 @@ describe('Popup', () => {
     )
     expect(screen.getByText('openai')).toBeInTheDocument()
 
-    // When features are missing, non-toolCall feature checks should fail.
     unmount3()
     render(
       <Popup
@@ -241,15 +278,23 @@ describe('Popup', () => {
         scopeFeatures={[ModelFeatureEnum.vision]}
       />,
     )
-    expect(screen.getByText('No model found for “”')).toBeInTheDocument()
+    expect(screen.getByText('No model found for \u201C\u201D')).toBeInTheDocument()
   })
 
-  it('should match labels from other languages when current language key is missing', () => {
+  it('should match model labels from fallback languages when current language key is missing', () => {
     mockLanguage = 'fr_FR'
 
     render(
       <Popup
-        modelList={[makeModel()]}
+        modelList={[
+          makeModel({
+            models: [
+              makeModelItem({
+                label: { en_US: 'OpenAI GPT', zh_Hans: 'OpenAI GPT' },
+              }),
+            ],
+          }),
+        ]}
         onSelect={vi.fn()}
         onHide={vi.fn()}
       />,
@@ -257,32 +302,28 @@ describe('Popup', () => {
 
     fireEvent.change(
       screen.getByPlaceholderText('datasetSettings.form.searchModel'),
-      { target: { value: 'gpt' } },
+      { target: { value: 'openai' } },
     )
 
     expect(screen.getByText('openai')).toBeInTheDocument()
   })
 
-  it('should filter out model when features array exists but does not include required scopeFeature', () => {
-    const modelWithToolCallOnly = makeModel({
-      models: [makeModelItem({ features: [ModelFeatureEnum.toolCall] })],
+  it('should show credits exhausted alert when an exhausted provider supports credits', () => {
+    Object.assign(mockTrialCredits, {
+      credits: 0,
+      totalCredits: 200,
+      isExhausted: true,
     })
+    mockContextModelProviders.current = [
+      makeContextProvider({
+        provider: 'test-openai',
+        system_configuration: {
+          enabled: true,
+        } as MockContextProvider['system_configuration'],
+      }),
+    ]
 
     render(
-      <Popup
-        modelList={[modelWithToolCallOnly]}
-        onSelect={vi.fn()}
-        onHide={vi.fn()}
-        scopeFeatures={[ModelFeatureEnum.vision]}
-      />,
-    )
-
-    // The model item should be filtered out because it has toolCall but not vision
-    expect(screen.queryByText('openai')).not.toBeInTheDocument()
-  })
-
-  it('should close tooltip on scroll', () => {
-    const { container } = render(
       <Popup
         modelList={[makeModel()]}
         onSelect={vi.fn()}
@@ -290,53 +331,120 @@ describe('Popup', () => {
       />,
     )
 
-    fireEvent.scroll(container.firstElementChild as HTMLElement)
-    expect(closeActiveTooltipSpy).toHaveBeenCalled()
+    expect(screen.getByTestId('credits-exhausted-alert')).toHaveAttribute('data-has-api-key-fallback', 'false')
+  })
+
+  it('should not show credits exhausted alert when only non-trial system providers are exhausted', () => {
+    Object.assign(mockTrialCredits, {
+      credits: 0,
+      totalCredits: 200,
+      isExhausted: true,
+    })
+    mockTrialModels.current = ['test-anthropic']
+    mockContextModelProviders.current = [
+      makeContextProvider({
+        provider: 'test-openai',
+        system_configuration: {
+          enabled: true,
+        } as MockContextProvider['system_configuration'],
+      }),
+    ]
+
+    render(
+      <Popup
+        modelList={[makeModel()]}
+        onSelect={vi.fn()}
+        onHide={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByTestId('credits-exhausted-alert')).not.toBeInTheDocument()
+  })
+
+  it('should not mark api key fallback for non-trial system providers', () => {
+    Object.assign(mockTrialCredits, {
+      credits: 0,
+      totalCredits: 200,
+      isExhausted: true,
+    })
+    mockTrialModels.current = ['test-anthropic']
+    mockContextModelProviders.current = [
+      makeContextProvider({
+        provider: 'test-openai',
+        custom_configuration: {
+          status: 'active',
+        } as MockContextProvider['custom_configuration'],
+        system_configuration: {
+          enabled: true,
+        } as MockContextProvider['system_configuration'],
+      }),
+    ]
+
+    render(
+      <Popup
+        modelList={[makeModel()]}
+        onSelect={vi.fn()}
+        onHide={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByTestId('credits-exhausted-alert')).not.toBeInTheDocument()
   })
 
   it('should open provider settings when clicking footer link', () => {
+    const onHide = vi.fn()
     render(
       <Popup
         modelList={[makeModel()]}
         onSelect={vi.fn()}
-        onHide={vi.fn()}
+        onHide={onHide}
       />,
     )
 
-    fireEvent.click(screen.getByText('common.model.settingsLink'))
+    fireEvent.click(screen.getByText('common.modelProvider.selector.modelProviderSettings'))
 
+    expect(onHide).toHaveBeenCalled()
     expect(mockSetShowAccountSettingModal).toHaveBeenCalledWith({
       payload: 'provider',
     })
   })
 
-  it('should call onHide when footer settings link is clicked', () => {
-    const mockOnHide = vi.fn()
+  it('should show empty state when no providers are configured', () => {
+    const onHide = vi.fn()
     render(
       <Popup
-        modelList={[makeModel()]}
+        modelList={[]}
         onSelect={vi.fn()}
-        onHide={mockOnHide}
+        onHide={onHide}
       />,
     )
 
-    fireEvent.click(screen.getByText('common.model.settingsLink'))
+    expect(screen.getByText(/modelProvider\.selector\.noProviderConfigured(?!Desc)/)).toBeInTheDocument()
+    expect(screen.getByText(/modelProvider\.selector\.noProviderConfiguredDesc/)).toBeInTheDocument()
 
-    expect(mockOnHide).toHaveBeenCalled()
+    fireEvent.click(screen.getByText(/modelProvider\.selector\.configure/))
+    expect(onHide).toHaveBeenCalled()
+    expect(mockSetShowAccountSettingModal).toHaveBeenCalledWith({
+      payload: 'provider',
+    })
   })
 
-  it('should match model label when searchText is non-empty and label key exists for current language', () => {
+  it('should render marketplace providers that are not installed', () => {
+    mockContextModelProviders.current = [makeContextProvider({ provider: 'test-openai' })]
+
     render(
       <Popup
-        modelList={[makeModel()]}
+        modelList={[]}
         onSelect={vi.fn()}
         onHide={vi.fn()}
       />,
     )
 
-    // GPT-4 label has en_US key, so modelItem.label[language] is defined
-    const input = screen.getByPlaceholderText('datasetSettings.form.searchModel')
-    fireEvent.change(input, { target: { value: 'gpt' } })
+    expect(screen.queryByText('TestOpenAI')).not.toBeInTheDocument()
+    expect(screen.getByText('TestAnthropic')).toBeInTheDocument()
+    expect(screen.getByText(/modelProvider\.selector\.fromMarketplace/)).toBeInTheDocument()
+    expect(screen.getByText(/modelProvider\.selector\.discoverMoreInMarketplace/)).toBeInTheDocument()
+  })
 
   it('should show installed marketplace providers without models when AI credits are available', () => {
     mockContextModelProviders.current = [makeContextProvider({

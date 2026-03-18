@@ -25,9 +25,6 @@ export type TriggerProps = {
   modelId?: string
   isInWorkflow?: boolean
   settingsRef?: Ref<HTMLDivElement>
-  disabled?: boolean
-  hasDeprecated?: boolean
-  modelDisabled?: boolean
 }
 
 const Trigger: FC<TriggerProps> = ({
@@ -37,7 +34,6 @@ const Trigger: FC<TriggerProps> = ({
   modelId,
   isInWorkflow,
   settingsRef,
-  disabled,
 }) => {
   const { t } = useTranslation()
   const { modelProviders } = useProviderContext()
